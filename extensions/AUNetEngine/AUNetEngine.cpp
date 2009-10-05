@@ -14,36 +14,62 @@
 
 /**	An AudioUnit render callback.  
  The AudioUnit will get its audio input by calling this function.  */
-//OSStatus AUNetEngineGetInputSamples(void*						inRefCon,
-//									AudioUnitRenderActionFlags*	ioActionFlags,
-//									const AudioTimeStamp*		inTimeStamp,
-//									UInt32						inBusNumber,
-//									UInt32						inNumberFrames,
-//									AudioBufferList*			ioData)
-//{
-//	AUNetEngine* AUNetEngine = (AUNetEngine*)inRefCon;
-//
-//	for(TTUInt16 channel=0; channel < ioData->mNumberBuffers; channel++)
-//		memcpy(ioData->mBuffers[channel].mData, AUNetEngine->inputBufferList->mBuffers[channel].mData, sizeof(TTFloat32) * inNumberFrames);
-//	return noErr;
-//}
+OSStatus AUNetEngineGetInputSamples(void*						inRefCon,
+									AudioUnitRenderActionFlags*	ioActionFlags,
+									const AudioTimeStamp*		inTimeStamp,
+									UInt32						inBusNumber,
+									UInt32						inNumberFrames,
+									AudioBufferList*			ioData)
+{
+	AUNetEngine* engine = (AUNetEngine*)inRefCon;
+
+	for(TTUInt16 channel=0; channel < ioData->mNumberBuffers; channel++)
+		memcpy(ioData->mBuffers[channel].mData, engine->inputBufferList->mBuffers[channel].mData, sizeof(TTFloat32) * inNumberFrames);
+	return noErr;
+}
 
 	
 /**	Constructor. */
-TT_OBJECT_CONSTRUCTOR_EXPORT
-AUNetEngine::AUNetEngine(TTValue& arguments),
+TT_OBJECT_CONSTRUCTOR_EXPORT,
 	mAUNetSend(NULL),
-	mAUNetReceive(NULL)
-//	inputBufferList(NULL), 
-//	outputBufferList(NULL)
+	mAUNetReceive(NULL),
+	inputBufferList(NULL), 
+	outputBufferList(NULL),	
+	mNumInputChannels(2),
+	mNumOutputChannels(2),
+	mVectorSize(64),
+	mSampleRate(44100),
+	mInputDevice(NULL),
+	mOutputDevice(NULL),
+	isRunning(false),
+	inputBuffer(NULL),
+	outputBuffer(NULL)
 {
-//	registerAttributeWithSetter(plugin,	kTypeSymbol);	
-//	registerMessageWithArgument(setParameter);
-//	registerMessageWithArgument(getParameter);
-
 	timeStamp.mSampleTime = 0;
-	timeStamp.mFlags = kAudioTimeStampSampleTimeValid;
+	timeStamp.mFlags = kAudioTimeStampSampleTimeValid;	
+	callbackObservers = new TTList;
+	callbackObservers->setThreadProtection(NO);	// ... because we make calls into this at every audio vector calculation ...
+
+	TTObjectInstantiate(kTTSym_audiosignal, &inputBuffer, 1);
+	TTObjectInstantiate(kTTSym_audiosignal, &outputBuffer, 1);
 	
+	// numChannels should be readonly -- how do we do that?
+	addAttributeWithSetter(NumInputChannels,	kTypeUInt16);
+	addAttributeWithSetter(NumOutputChannels,	kTypeUInt16);	
+	addAttributeWithSetter(VectorSize,			kTypeUInt16);
+	addAttributeWithSetter(SampleRate,			kTypeUInt32);
+	addAttributeWithSetter(InputDevice,			kTypeSymbol);
+	addAttributeWithSetter(OutputDevice,		kTypeSymbol);
+	
+	addMessage(start);
+	addMessage(stop);
+	//registerMessageWithArgument(getCpuLoad);
+	addMessageWithArgument(addCallbackObserver);
+	addMessageWithArgument(removeCallbackObserver);
+
+	// Set defaults
+	setAttributeValue(TT("inputDevice"), TT("default"));
+	setAttributeValue(TT("outputDevice"), TT("default"));
 }
 
 
@@ -60,14 +86,15 @@ AUNetEngine::~AUNetEngine()
 		CloseComponent(mAUNetReceive);
 		mAUNetReceive = NULL;
 	}		
-//	free(inputBufferList);
-//	free(outputBufferList);
+	free(inputBufferList);
+	free(outputBufferList);
 }
 
 
 void AUNetEngine::loadPlugins()
 {
 	ComponentDescription searchDesc;
+	TTErr err;
 	
 	searchDesc.componentType			= kAudioUnitType_Generator;
 	searchDesc.componentSubType			= kAudioUnitSubType_NetReceive;
@@ -84,73 +111,53 @@ void AUNetEngine::loadPlugins()
 		searchDesc.componentFlagsMask		= 0;
 		err = loadPlugin(searchDesc, mAUNetSend);
 	}
-	
-	return err;
 }
 
 
-TTErr AUNetEngine::loadPlugin(const ComponentDescription& searchDesc, AudioUnit& plug)
+TTErr AUNetEngine::loadPlugin(ComponentDescription& searchDesc, AudioUnit& plug)
 {
 	Component				comp = NULL;
-	ComponentDescription	compDesc;
-	Handle					compName;
-	char*					compNameStr;
-	int						compNameLen;
-	TTSymbolPtr				pluginName = newPluginName;
+	AURenderCallbackStruct	callbackStruct;
 
-	while (comp = FindNextComponent(comp, &searchDesc)) {
-		compName = NewHandle(0);
-		GetComponentInfo(comp, &compDesc, compName, NULL, NULL);
-		HLock(compName);
-		compNameStr = *compName;
-		compNameLen = *compNameStr++;
-		compNameStr[compNameLen] = 0;
-		compNameStr = strchr(compNameStr, ':');
-		compNameStr++;
-		compNameStr++;
-		
-		if (!strcmp(compNameStr, pluginName->getCString())) {	
-			AURenderCallbackStruct callbackStruct;
-
-			audioUnit = OpenComponent(comp);
-			plugin = pluginName;
-			
-			stuffParameterNamesIntoHash();
-			
-			HUnlock(compName);
-			DisposeHandle(compName);
-			
-			// plugin is loaded, now activate it
-			callbackStruct.inputProc = &AUNetEngineGetInputSamples;
-			callbackStruct.inputProcRefCon = this;
-			AudioUnitSetProperty(audioUnit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &callbackStruct, sizeof(AURenderCallbackStruct));
-			AudioUnitSetProperty(audioUnit, kAudioUnitProperty_SampleRate, kAudioUnitScope_Global, 0, &sr, sizeof(sr));
-			AudioUnitInitialize(audioUnit);
-			
-			return kTTErrNone;
-		}
-		
-		HUnlock(compName);
-		DisposeHandle(compName);
+	comp = FindNextComponent(comp, &searchDesc);
+	if (comp) {
+		plug = OpenComponent(comp);
+		callbackStruct.inputProc = &AUNetEngineGetInputSamples;
+		callbackStruct.inputProcRefCon = this;
+		AudioUnitSetProperty(plug, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &callbackStruct, sizeof(AURenderCallbackStruct));
+		AudioUnitSetProperty(plug, kAudioUnitProperty_SampleRate, kAudioUnitScope_Global, 0, &mSampleRate, sizeof(mSampleRate));
+		AudioUnitInitialize(plug);		
+		return kTTErrNone;		
 	}
+	return kTTErrGeneric;
 }
 
 
-TTErr AUNetEngine::updateMaxNumChannels(const TTValue& oldMaxNumChannels)
+TTErr AUNetEngine::setNumInputChannels(const TTValue& v)
 {
-	if(inputBufferList)
+	if (inputBufferList)
 		free(inputBufferList);
-	if(outputBufferList)
-		free(outputBufferList);
 	
-	// inputBufferList = (AudioBufferList*)malloc(offsetof(AudioBufferList, mBuffers[maxNumChannels]));
-	// outputBufferList = (AudioBufferList*)malloc(offsetof(AudioBufferList, mBuffers[maxNumChannels]));
-	inputBufferList = (AudioBufferList*)malloc(offsetof(AudioBufferList, mBuffers) + (maxNumChannels * sizeof(AudioBuffer)));
-	outputBufferList = (AudioBufferList*)malloc(offsetof(AudioBufferList, mBuffers) + (maxNumChannels * sizeof(AudioBuffer)));
-
-	for(TTUInt16 channel=0; channel<maxNumChannels; channel++){
+	mNumInputChannels = v;
+	inputBufferList = (AudioBufferList*)malloc(offsetof(AudioBufferList, mBuffers) + (mNumInputChannels * sizeof(AudioBuffer)));
+	
+	for (TTUInt16 channel=0; channel<mNumInputChannels; channel++) {
 		inputBufferList->mBuffers[channel].mNumberChannels = 1; 
 		inputBufferList->mBuffers[channel].mData = NULL;			// We will set this pointer in the process method
+	} 
+	return kTTErrNone;
+}
+
+
+TTErr AUNetEngine::setNumOutputChannels(const TTValue& v)
+{
+	if (outputBufferList)
+		free(outputBufferList);
+	
+	mNumOutputChannels = v;
+	outputBufferList = (AudioBufferList*)malloc(offsetof(AudioBufferList, mBuffers) + (mNumOutputChannels * sizeof(AudioBuffer)));
+
+	for(TTUInt16 channel=0; channel<mNumOutputChannels; channel++){
 		outputBufferList->mBuffers[channel].mNumberChannels = 1; 
 		outputBufferList->mBuffers[channel].mData = NULL;			// Tell the AU to deal with the memory
 	} 
@@ -158,67 +165,7 @@ TTErr AUNetEngine::updateMaxNumChannels(const TTValue& oldMaxNumChannels)
 }
 
 
-TTErr AUNetEngine::setplugin(TTValue& newPluginName)
-{
-	ComponentDescription	searchDesc;
-	Component				comp = NULL;
-	ComponentDescription	compDesc;
-	Handle					compName;
-	char*					compNameStr;
-	int						compNameLen;
-	TTSymbolPtr				pluginName = newPluginName;
-	
-	if(audioUnit){
-		AudioUnitUninitialize(audioUnit);
-		CloseComponent(audioUnit);
-		audioUnit = NULL;
-	}
-	
-	searchDesc.componentType = kAudioUnitType_Effect;	// TODO: support other types
-	searchDesc.componentSubType = 0;					// kAudioUnitSubType_DefaultOutput;
-	searchDesc.componentManufacturer = 0;				//kAudioUnitManufacturer_Apple;
-	searchDesc.componentFlags = 0;
-	searchDesc.componentFlagsMask = 0;
-	
-	while(comp = FindNextComponent(comp, &searchDesc)){
-		compName = NewHandle(0);
-		GetComponentInfo(comp, &compDesc, compName, NULL, NULL);
-		HLock(compName);
-		compNameStr = *compName;
-		compNameLen = *compNameStr++;
-		compNameStr[compNameLen] = 0;
-		compNameStr = strchr(compNameStr, ':');
-		compNameStr++;
-		compNameStr++;
-		
-		if(!strcmp(compNameStr, pluginName->getCString())){	
-			AURenderCallbackStruct callbackStruct;
-
-			audioUnit = OpenComponent(comp);
-			plugin = pluginName;
-			
-			stuffParameterNamesIntoHash();
-			
-			HUnlock(compName);
-			DisposeHandle(compName);
-			
-			// plugin is loaded, now activate it
-			callbackStruct.inputProc = &AUNetEngineGetInputSamples;
-			callbackStruct.inputProcRefCon = this;
-			AudioUnitSetProperty(audioUnit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &callbackStruct, sizeof(AURenderCallbackStruct));
-			AudioUnitSetProperty(audioUnit, kAudioUnitProperty_SampleRate, kAudioUnitScope_Global, 0, &sr, sizeof(sr));
-			AudioUnitInitialize(audioUnit);
-			
-			return kTTErrNone;
-		}
-		
-		HUnlock(compName);
-		DisposeHandle(compName);
-	}
-	return kTTErrGeneric;
-}
-
-
+/*
 TTErr AUNetEngine::setParameter(const TTValue& nameAndValue)
 {
 	TTSymbolPtr	parameterName;
@@ -256,9 +203,11 @@ TTErr AUNetEngine::getParameter(TTValue& nameInAndValueOut)
 	}
 	return err;
 }
+*/
 
 
 /** Audio Processing Method */
+/*
 TTErr AUNetEngine::processAudio(TTAudioSignalArrayPtr inputs, TTAudioSignalArrayPtr outputs)
 {
 	TTAudioSignal&				in = inputs->getSignal(0);
@@ -293,3 +242,4 @@ TTErr AUNetEngine::processAudio(TTAudioSignalArrayPtr inputs, TTAudioSignalArray
 	timeStamp.mSampleTime += vs;
 	return kTTErrNone;
 }
+ */

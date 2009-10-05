@@ -22,23 +22,21 @@
 
 class AUNetEngine : public TTObject {
 	TTCLASS_SETUP(AUNetEngine)
-	
+
+public:
 	AudioUnit			mAUNetSend;			///< the actual plugin
 	AudioUnit			mAUNetReceive;		///< the actual plugin
-//	AudioBufferList*	inputBufferList;
-//	AudioBufferList*	outputBufferList;
+	AudioBufferList*	inputBufferList;
+	AudioBufferList*	outputBufferList;
 	AudioTimeStamp		timeStamp;
 
-	TTUInt16			numInputChannels;
-	TTUInt16			numOutputChannels;
-	TTUInt16			vectorSize;			///< framesPerBuffer
-	TTUInt32			sampleRate;
-//    PaStream*			stream;
+	TTUInt16			mNumInputChannels;
+	TTUInt16			mNumOutputChannels;
+	TTUInt16			mVectorSize;			///< framesPerBuffer
+	TTUInt32			mSampleRate;
 	TTListPtr			callbackObservers;
-	TTSymbolPtr			inputDevice;
-	TTSymbolPtr			outputDevice;
-//	const PaDeviceInfo*	inputDeviceInfo;
-//	const PaDeviceInfo*	outputDeviceInfo;
+	TTSymbolPtr			mInputDevice;
+	TTSymbolPtr			mOutputDevice;
 	TTInt16				inputDeviceIndex;
 	TTInt16				outputDeviceIndex;
 	TTBoolean			isRunning;
@@ -47,7 +45,10 @@ class AUNetEngine : public TTObject {
 
 private:		
 	void loadPlugins();
-	TTErr loadPlugin(const ComponentDescription& searchDesc, AudioUnit& plug);
+	TTErr loadPlugin(ComponentDescription& searchDesc, AudioUnit& plug);
+
+	TTErr setNumInputChannels(const TTValue& v);
+	TTErr setNumOutputChannels(const TTValue& v);
 	
 protected:
 	TTErr initStream();
@@ -58,10 +59,10 @@ protected:
 	TTErr getAvailableOutputDevices(TTValue& returnedDeviceNames);
 
 	// Attribute Accessors
-	TTErr setinputDevice(TTValue& newDeviceName);
-	TTErr setoutputDevice(TTValue& newDeviceName);
-	TTErr setvectorSize(TTValue& newVectorSize);
-	TTErr setsampleRate(TTValue& newSampleRate);
+	TTErr setInputDevice(TTValue& newDeviceName);
+	TTErr setOutputDevice(TTValue& newDeviceName);
+	TTErr setVectorSize(TTValue& newVectorSize);
+	TTErr setSampleRate(TTValue& newSampleRate);
 	
 	TTErr addCallbackObserver(const TTValue& objectToReceiveNotifications);
 	TTErr removeCallbackObserver(const TTValue& objectCurrentlyReceivingNotifications);
