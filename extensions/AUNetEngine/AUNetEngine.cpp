@@ -13,7 +13,7 @@
 #define thisTTClassTags	"audio, engine"
 
 /**	An AudioUnit render callback.  
- The AudioUnit will get its audio input by calling this function.  */
+	The AudioUnit will get its audio input by calling this function.  */
 OSStatus AUNetEngineGetInputSamples(void*						inRefCon,
 									AudioUnitRenderActionFlags*	ioActionFlags,
 									const AudioTimeStamp*		inTimeStamp,
@@ -28,8 +28,7 @@ OSStatus AUNetEngineGetInputSamples(void*						inRefCon,
 	return noErr;
 }
 
-	
-/**	Constructor. */
+
 TT_OBJECT_CONSTRUCTOR_EXPORT,
 	mAUNetSend(NULL),
 	mAUNetReceive(NULL),
@@ -56,16 +55,16 @@ TT_OBJECT_CONSTRUCTOR_EXPORT,
 	// numChannels should be readonly -- how do we do that?
 	addAttributeWithSetter(NumInputChannels,	kTypeUInt16);
 	addAttributeWithSetter(NumOutputChannels,	kTypeUInt16);	
-	addAttributeWithSetter(VectorSize,			kTypeUInt16);
-	addAttributeWithSetter(SampleRate,			kTypeUInt32);
-	addAttributeWithSetter(InputDevice,			kTypeSymbol);
-	addAttributeWithSetter(OutputDevice,		kTypeSymbol);
+//	addAttributeWithSetter(VectorSize,			kTypeUInt16);
+//	addAttributeWithSetter(SampleRate,			kTypeUInt32);
+//	addAttributeWithSetter(InputDevice,			kTypeSymbol);
+//	addAttributeWithSetter(OutputDevice,		kTypeSymbol);
 	
-	addMessage(start);
-	addMessage(stop);
+//	addMessage(start);
+//	addMessage(stop);
 	//registerMessageWithArgument(getCpuLoad);
-	addMessageWithArgument(addCallbackObserver);
-	addMessageWithArgument(removeCallbackObserver);
+//	addMessageWithArgument(addCallbackObserver);
+//	addMessageWithArgument(removeCallbackObserver);
 
 	// Set defaults
 	setAttributeValue(TT("inputDevice"), TT("default"));
@@ -73,15 +72,14 @@ TT_OBJECT_CONSTRUCTOR_EXPORT,
 }
 
 
-/**	Destructor. */
 AUNetEngine::~AUNetEngine()
 {
-	if(mAUNetSend){
+	if (mAUNetSend) {
 		AudioUnitUninitialize(mAUNetSend);
 		CloseComponent(mAUNetSend);
 		mAUNetSend = NULL;
 	}		
-	if(mAUNetReceive){
+	if (mAUNetReceive) {
 		AudioUnitUninitialize(mAUNetReceive);
 		CloseComponent(mAUNetReceive);
 		mAUNetReceive = NULL;

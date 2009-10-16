@@ -52,20 +52,20 @@ private:
 	
 protected:
 	TTErr initStream();
-	TTErr start();
-	TTErr stop();
-	TTErr getCpuLoad(TTValue& returnedValue);
+//	TTErr start();
+//	TTErr stop();
+//	TTErr getCpuLoad(TTValue& returnedValue);
 	TTErr getAvailableInputDevices(TTValue& returnedDeviceNames);
 	TTErr getAvailableOutputDevices(TTValue& returnedDeviceNames);
 
 	// Attribute Accessors
-	TTErr setInputDevice(TTValue& newDeviceName);
-	TTErr setOutputDevice(TTValue& newDeviceName);
-	TTErr setVectorSize(TTValue& newVectorSize);
-	TTErr setSampleRate(TTValue& newSampleRate);
+//	TTErr setInputDevice(TTValue& newDeviceName);
+//	TTErr setOutputDevice(TTValue& newDeviceName);
+//	TTErr setVectorSize(TTValue& newVectorSize);
+//	TTErr setSampleRate(TTValue& newSampleRate);
 	
-	TTErr addCallbackObserver(const TTValue& objectToReceiveNotifications);
-	TTErr removeCallbackObserver(const TTValue& objectCurrentlyReceivingNotifications);
+//	TTErr addCallbackObserver(const TTValue& objectToReceiveNotifications);
+//	TTErr removeCallbackObserver(const TTValue& objectCurrentlyReceivingNotifications);
 	
 	/**	This is called repeatedly by PortAudio every time a new vector of audio is needed.	*/
 //	TTInt32 callback(const TTFloat32*					input, 
@@ -80,4 +80,3 @@ typedef AUNetEngine* AUNetEnginePtr;
 
 
 #endif // __TT_NETENGINE_H__
-
