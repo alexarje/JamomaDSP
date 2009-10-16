@@ -15,7 +15,8 @@
 
 TT_AUDIO_CONSTRUCTOR,
 	index(0.0),
-	indexDelta(0.0)
+	indexDelta(0.0),
+	wavetable(NULL)
 {
 	TTUInt16	initialMaxNumChannels = arguments;
 
